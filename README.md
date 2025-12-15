@@ -1,4 +1,5 @@
 file: DzBBup_sh
+Dz Bash Backup Shell script
 
 A linux shell (bash) script to use rsync for backing up my data.
 
