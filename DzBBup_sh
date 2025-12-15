@@ -1,0 +1,278 @@
+#!/bin/bash
+#
+# file: DzBBup_sh
+# Baka Saru (Dee Roy) 2022 October
+# updated 2024 December
+# use rsync BUP files, Code, Docs, Music, Pictures
+
+# The awk command got its name from three people who wrote the original version in 1977 - Alfred Aho, Peter Weinberger, and Brian Kernighan
+
+localusr="/home/${USER}"
+localbin="/home/${USER}/bin"
+# echo $localbin
+#
+# load colors
+#
+bold="\e[1m"
+yellow="\e[0;33m\e[1m"
+blue="\e[0;94m"
+red="\e[0;91m"
+white="\e[0;97m"
+reset="\e[0m"
+
+echo -e "${yellow}\t$(basename $0)${reset}"
+
+# function definitions, Main is at the end of file
+
+print_help() {
+  echo -e "\n\t${blue}Help${reset}"
+  echo -e "Usage:${blue} $(basename $0)${reset}"
+  echo -e "Select Media to BUP to or Restore from."
+  echo -e "You will see a dryrun first before actual commit."
+  echo -e "Delete on destination only happening on BUP to media,"
+  echo -e "not on restore from media."
+  echo -e "So do your culling on local HDD and then BUP with --delete on."
+  echo -e "Use 'n' to toggle dry run mode - when enabled, backup will"
+  echo -e "only show what would be transferred without confirmation."
+  echo
+}
+
+print_rsync_del_status() {
+  echo -en "${reset}Rsync set to "
+  if [[ "$rsync_delete" = '--delete' ]]; then
+    echo -e "${red}$rsync_delete${reset} extraneous files."
+  else
+    echo -e "${reset}add/update files."
+  fi
+}
+
+print_dry_run_status() {
+  if [[ "$dry_run" = '--dry-run' ]]; then
+    echo -en "${blue}Dry run mode ENABLED "
+    echo -e "${yellow}(simulation only)."
+  else
+    echo -en "${yellow}NOT a Dry run, "
+    echo -e "${red}We are Executing/rsyncing files${reset}."
+  fi
+}
+
+set_subject() {
+  # the defaults for various subjects
+  if [[ "$subj" = 'code' ]]; then
+    rsync_src="${localusr}/bin/"
+    rsync_tgt="${chosenmedia}/code/bin/"
+    rsync_delete="--delete"
+  elif [[ "$subj" = 'docs' ]]; then
+    rsync_src="${localusr}/Documents/"
+    rsync_tgt="${chosenmedia}/Documents/"
+    rsync_delete=""
+  elif [[ "$subj" = 'music' ]]; then
+    rsync_src="/media/dee/data/Audio-1tb/Music/"
+    rsync_tgt="${chosenmedia}/Audio/Music/"
+    rsync_delete=""
+  elif [[ "$subj" = 'pics' ]]; then
+    rsync_src="${localusr}/Pictures/"
+    rsync_tgt="${chosenmedia}/Pictures/"
+    rsync_delete=""
+  elif [[ "$subj" = 'ute' ]]; then
+    rsync_src="${localusr}/Music/UTE-MUSIC-HDD/"
+    rsync_tgt="${chosenmedia}/"
+    rsync_delete="--delete"
+  else
+    echo -e "${yellow}no subject ??${reset}"
+  fi
+  # Initialize dry_run if not set
+  if [[ -z "$dry_run" ]]; then
+    dry_run=""
+  fi
+} # set_subject
+
+check_media() {
+  echo -e "Checking media we can interact with:\n"
+  FOUNDMEDIA=($(mount | awk '/media/{print $3}' | tr " " "\n"))
+  # Text Replace " " with \n
+  if [[ ${#FOUNDMEDIA[@]} -eq 0 ]]; then
+    echo -e "no media found"
+    exit
+  elif [[ ${#FOUNDMEDIA[@]} -eq 1 ]]; then
+    #statements
+    echo -e "We only have ${white}one media to use...${reset}"
+    chosenmedia=$FOUNDMEDIA
+    echo "chosen: $chosenmedia"
+    set_subject
+  elif [[ ${#FOUNDMEDIA[@]} -gt 1 ]]; then
+    echo -e "There are ${white}${#FOUNDMEDIA[*]} possibles${reset} to choose from"
+    select chosenmedia in $(mount | awk '/media/{print $3}'); do
+      echo -e "${white}Media chosen $chosenmedia${reset}"
+      set_subject
+      break
+    done
+  else
+    echo "Don't know what we've found ${white} bailing out! ${reset}"
+  fi
+} # check_media
+
+run_bup() {
+  echo -e "${blue}Running rysnc ${yellow}BACKUP${reset}"
+  echo -e "from $rsync_src\nto${white} $rsync_tgt\n"
+  # -recursive group perms update timesModed-preserve verbose checksum
+  rstags="-rxutvc"
+
+  # SET EXCLUDES HERE FOR VENVs especially
+  # as I keep my Virtual environments in the ~/bin folder, foolish as that may be?
+  rsync_excludes=(--exclude='venv' --exclude '_venvs/' --exclude '_pyenvirons/' --exclude='pyenv*/' --exclude='__pycache__')
+
+  if [[ "$dry_run" = '' ]]; then
+    print_dry_run_status
+    print_rsync_del_status
+    echo -e -n "${red}Confirm BACKUP ${yellow}$subj ${red}to $rsync_tgt?${reset}"
+    echo -en "${yellow}"
+    read -e -p " b > " USERENTRY
+    if [ "$USERENTRY" = 'b' ]; then
+      goahead="yes"
+    else
+      goahead="no"
+    fi
+    echo -e "${reset}"
+  else
+    echo -e "${yellow}Backup $subj DRY RUN ONLY: tags $rstags $dry_run ${blue}"
+    goahead="yes"
+  fi
+  if [ "$goahead" = 'yes' ]; then
+    echo -e "${blue}"
+    # -recursive group perms update timesModed-preserve verbose checksum
+    rsync $dry_run ${rstags} --no-o --mkpath $rsync_delete "${rsync_excludes[@]}" ${rsync_src} ${rsync_tgt}
+    echo -en "${yellow}"
+    echo -e -n "${blue}BACKUP ${reset}$subj ${blue}to ${reset}$rsync_tgt: "
+
+    echo -en "${white}Done.\n"
+    read -e -p " 'enter' to continue > " USERENTRY
+    echo -en "${reset}"
+    if [[ "$USERENTRY" == "q" ]]; then
+      exit 0
+    fi
+  else
+    echo -e "${yellow}Failed to confirm, doing nothing${reset}"
+  fi
+} # run_bup
+
+run_restore() {
+  echo -e "${blue}Running rysnc ${white}RESTORE $subj"
+  echo -e "${blue}to $rsync_src"
+  echo -e "${blue}from ${white}$rsync_tgt${reset}"
+  echo -e "${yellow}\tNO DELETE${reset}"
+  # -recursive group perms update timesModed-preserve verbose checksum
+  rstags="-rxutv"
+  rsync_delete=""
+
+  if [[ "$dry_run" = '' ]]; then
+    print_dry_run_status
+    print_rsync_del_status
+    echo -e "${yellow}tags: $rstags $dry_run ${blue}"
+    echo -e -n "${white}Confirm RESTORE $subj ${yellow}FROM${white} $rsync_tgt?${reset}"
+    echo -en "${yellow}"
+    read -e -p " r > " USERENTRY
+    echo -en "${reset}"
+    if [ "$USERENTRY" = 'r' ]; then
+      goahead="yes"
+    else
+      goahead="no"
+    fi
+  else
+    echo -e "${yellow}DRY RUN ONLY${blue}"
+    goahead="yes"
+  fi
+  if [ "$goahead" = 'yes' ]; then
+    echo -e "${yellow}ok, we're RESTORING  $subj: tags $rstags $dry_run ${blue}"
+    rsync $dry_run ${rstags} --no-o ${rsync_tgt} ${rsync_src}
+    # $? the error level from previous command eg. rsync
+    # equals 0 means success
+    if [[ $? -eq 0 ]]; then
+      echo -e "${white}RESTORE $subj ${yellow}FROM${white} $rsync_tgt DONE${reset}"
+      echo -e "you might want to ${blue}chmod 776 ~/bin/*_sh${reset}"
+    fi
+    exit
+  else
+    echo -e "${yellow}Failed to confirm, doing nothing${reset}"
+  fi
+
+} # run_restore
+
+main_menu() {
+  echo
+  echo -e "${blue}Local user path $localusr${reset}"
+  echo -e "${blue}(u)${reset}sb media select"
+  echo -e "${blue}(t)${reset}oggle rsync Add/Delete "
+  echo -e "${blue}(n)${reset} toggle dry run mode"
+  echo -e "${blue}(c)${reset}ode files"
+  echo -e "${blue}(d)${reset}oc files"
+  echo -e "${blue}(m)${reset}usic files"
+  echo -e "${blue}(ute)${reset} music files"
+  echo -e "${blue}(p)${reset}ic files"
+  echo -e "${blue}(b)${reset}ackup files, source to target"
+  echo -e "${blue}(r)${reset}estore files, target to source"
+  echo -e "${blue}(h)${reset}elp, or ${blue}'ENTER'${reset} to ${blue}Quit${reset}, "
+  print_rsync_del_status
+  print_dry_run_status
+  echo -e "${blue}source is $rsync_src${reset}"
+  echo -e "${white}target is $rsync_tgt${reset}"
+  echo -en "${yellow}$subj${reset}"
+  read -e -p " > " USERENTRY
+  echo -en ${reset}
+  if [ -z "$USERENTRY" ]; then
+    echo -e "    ...nothing entered so we are quitting."
+    continue="no"
+  elif [ "$USERENTRY" = 'u' ]; then
+    check_media
+  elif [ "$USERENTRY" = 't' ]; then
+    if [[ "$rsync_delete" = '--delete' ]]; then
+      rsync_delete=""
+    else
+      rsync_delete="--delete"
+    fi
+  elif [ "$USERENTRY" = 'n' ]; then
+    if [[ "$dry_run" = '--dry-run' ]]; then
+      dry_run=""
+    else
+      dry_run="--dry-run"
+    fi
+  elif [ "$USERENTRY" = 'c' ]; then
+    subj="code"
+    set_subject
+  elif [ "$USERENTRY" = 'd' ]; then
+    subj="docs"
+    set_subject
+  elif [ "$USERENTRY" = 'm' ]; then
+    subj="music"
+    set_subject
+  elif [ "$USERENTRY" = 'ute' ]; then
+    subj="ute"
+    set_subject
+  elif [ "$USERENTRY" = 'p' ]; then
+    subj="pics"
+    set_subject
+  elif [ "$USERENTRY" = 'b' ]; then
+    run_bup
+  elif [ "$USERENTRY" = 'r' ]; then
+    run_restore
+  elif [ "$USERENTRY" = 'h' ]; then
+    print_help
+  fi
+}
+
+# MAIN BLOCK START HERE
+
+if [ "$#" -gt 0 ]; then
+  # echo args present but shouldn't be
+  print_help
+else
+  subj="code"
+  dry_run=""
+  check_media
+
+  continue='yes'
+  until [ "$continue" = 'no' ]; do
+    main_menu
+  done
+fi
+echo -e "${blue}$0 \nfinished" # EOF
