@@ -1,8 +1,8 @@
 #!/bin/bash
 #
 # file: DzBBup_sh
-# Baka Saru (Dee Roy) 2022 October
-# updated 2024 December
+# Deez 2022 October
+# updated 2025 December
 # use rsync BUP files, Code, Docs, Music, Pictures
 
 # The awk command got its name from three people who wrote the original version in 1977 - Alfred Aho, Peter Weinberger, and Brian Kernighan
@@ -116,7 +116,8 @@ run_bup() {
   echo -e "${blue}Running rysnc ${yellow}BACKUP${reset}"
   echo -e "from $rsync_src\nto${white} $rsync_tgt\n"
   # -recursive group perms update timesModed-preserve verbose checksum
-  rstags="-rxutvc"
+  #rstags="-rxutvc"
+  rstags="-rxuvc"
 
   # SET EXCLUDES HERE FOR VENVs especially
   # as I keep my Virtual environments in the ~/bin folder, foolish as that may be?
@@ -125,7 +126,8 @@ run_bup() {
   if [[ "$dry_run" = '' ]]; then
     print_dry_run_status
     print_rsync_del_status
-    echo -e -n "${red}Confirm BACKUP ${yellow}$subj ${red}to $rsync_tgt?${reset}"
+    echo -e -n "${red} \033[5mBACKUP ${yellow}$subj ${red}to $rsync_tgt? \033[5mConfirm ${reset}"
+    #    echo -e -n "${red}Confirm BACKUP ${yellow}$subj ${red}to $rsync_tgt?${reset}"
     echo -en "${yellow}"
     read -e -p " b > " USERENTRY
     if [ "$USERENTRY" = 'b' ]; then
@@ -142,11 +144,16 @@ run_bup() {
     echo -e "${blue}"
     # -recursive group perms update timesModed-preserve verbose checksum
     rsync $dry_run ${rstags} --no-o --mkpath $rsync_delete "${rsync_excludes[@]}" ${rsync_src} ${rsync_tgt}
-    echo -en "${yellow}"
-    echo -e -n "${blue}BACKUP ${reset}$subj ${blue}to ${reset}$rsync_tgt: "
-
+    #    echo -en "${yellow}"
+    echo -e "${yellow}tags used: $rstags $dry_run ${blue}"
+    if [ "$dry_run" = "" ]; then
+      echo -e -n "${yellow}BACKUP ${reset}$subj ${blue}to ${reset}$rsync_tgt: "
+    else
+      echo -en "${yellow}$dry_run "
+      echo -e -n "BACKUP ${reset}$subj ${blue}to ${reset}$rsync_tgt: "
+    fi
     echo -en "${white}Done.\n"
-    read -e -p " 'enter' to continue > " USERENTRY
+    read -e -p "[q]uit or 'enter' to continue > " USERENTRY
     echo -en "${reset}"
     if [[ "$USERENTRY" == "q" ]]; then
       exit 0
@@ -162,14 +169,16 @@ run_restore() {
   echo -e "${blue}from ${white}$rsync_tgt${reset}"
   echo -e "${yellow}\tNO DELETE${reset}"
   # -recursive group perms update timesModed-preserve verbose checksum
-  rstags="-rxutv"
+  #  rstags="-rxutvc"
+  rstags="-rxuvc"
   rsync_delete=""
 
   if [[ "$dry_run" = '' ]]; then
     print_dry_run_status
     print_rsync_del_status
-    echo -e "${yellow}tags: $rstags $dry_run ${blue}"
-    echo -e -n "${white}Confirm RESTORE $subj ${yellow}FROM${white} $rsync_tgt?${reset}"
+    echo -e "${yellow}tags used: $rstags $dry_run ${blue}"
+    echo -e -n "${red}\033[5m RESTORE ${yellow}$subj ${white}FROM $rsync_tgt? \033[5mConfirm ${reset}"
+    #    echo -e -n "${white}Confirm RESTORE $subj ${yellow}FROM${white} $rsync_tgt?${reset}"
     echo -en "${yellow}"
     read -e -p " r > " USERENTRY
     echo -en "${reset}"
@@ -188,10 +197,19 @@ run_restore() {
     # $? the error level from previous command eg. rsync
     # equals 0 means success
     if [[ $? -eq 0 ]]; then
+      echo -e "${yellow}tags used $rstags $dry_run ${blue}"
       echo -e "${white}RESTORE $subj ${yellow}FROM${white} $rsync_tgt DONE${reset}"
-      echo -e "you might want to ${blue}chmod 776 ~/bin/*_sh${reset}"
+      if [[ "$dry_run" = '' ]]; then
+        echo -e "you might want to ${blue}chmod 776 ~/bin/*_sh${reset}"
+      fi
     fi
-    exit
+    read -e -p "[q]uit or 'enter' to continue > " USERENTRY
+    echo -en "${reset}"
+    if [[ "$USERENTRY" == "q" ]]; then
+      exit 0
+    fi
+
+    #    exit #exit program after retore
   else
     echo -e "${yellow}Failed to confirm, doing nothing${reset}"
   fi
